@@ -1,8 +1,9 @@
-package com.example.digitalwallet.config;
+package com.example.digitalWalletSystem.config;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -11,8 +12,12 @@ import java.util.Map;
 
 @Component
 public class JwtUtil {
-    private String secret = "your_jwt_secret_key"; // Replace with secure key
-    private long expiration = 1000 * 60 * 60; // 1 hour
+
+    @Value("${jwt.secret}")
+    private String secret;
+
+    @Value("${jwt.expiration:3600000}") // Default to 1 hour (in milliseconds)
+    private long expiration;
 
     public String generateToken(String username) {
         Map<String, Object> claims = new HashMap<>();
