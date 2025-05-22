@@ -10,17 +10,13 @@ import com.example.digitalWalletSystem.repository.WalletRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -28,17 +24,18 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
-    private final TokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final TokenRepository tokenRepository;
 
     public AuthController(UserRepository userRepository, WalletRepository walletRepository,
-                          TokenRepository tokenRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
+                          PasswordEncoder passwordEncoder, JwtUtil jwtUtil,
+                          TokenRepository tokenRepository) {
         this.userRepository = userRepository;
         this.walletRepository = walletRepository;
-        this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+        this.tokenRepository = tokenRepository;
     }
 
     @PostMapping("/register")
@@ -53,7 +50,6 @@ public class AuthController {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         User savedUser = userRepository.save(user);
 
-        // Create wallet for the user
         Wallet wallet = new Wallet();
         wallet.setUser(savedUser);
         walletRepository.save(wallet);
@@ -62,7 +58,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    @Operation(summary = "Login and get JWT token", responses = {
+    @Operation(summary = "Login and get tokens", responses = {
             @ApiResponse(responseCode = "200", description = "Login successful"),
             @ApiResponse(responseCode = "401", description = "Invalid credentials")
     })
@@ -76,37 +72,21 @@ public class AuthController {
             return ResponseEntity.status(401).body("Invalid credentials");
         }
 
-        String token = jwtUtil.generateToken(username);
-        // Save token to database
-        Token dbToken = new Token();
-        dbToken.setToken(token);
-        dbToken.setUser(user);
-        dbToken.setIssuedAt(LocalDateTime.now());
-        dbToken.setExpiresAt(LocalDateTime.now().plusSeconds(3600)); // 1 hour expiration
-        tokenRepository.save(dbToken);
+        // Generate JWT token
+        String jwtToken = jwtUtil.generateJwtToken(username);
+
+        // Generate and store UUID token
+        String uuidToken = jwtUtil.generateUuidToken();
+        Token token = new Token();
+        token.setToken(uuidToken);
+        token.setUser(user);
+        token.setIssuedAt(LocalDateTime.now());
+        token.setExpiresAt(LocalDateTime.now().plusSeconds(jwtUtil.getExpiration() / 1000));
+        tokenRepository.save(token);
 
         Map<String, String> response = new HashMap<>();
-        response.put("token", token);
+        response.put("jwtToken", jwtToken);
+        response.put("sessionToken", uuidToken);
         return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/logout")
-    @Operation(summary = "Logout and revoke JWT token", responses = {
-            @ApiResponse(responseCode = "200", description = "Logout successful"),
-            @ApiResponse(responseCode = "401", description = "Invalid or missing token")
-    })
-    public ResponseEntity<?> logout(@RequestHeader("Authorization") String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ResponseEntity.status(401).body("Invalid or missing token");
-        }
-        String token = authHeader.substring(7);
-        Optional<Token> tokenOpt = tokenRepository.findByToken(token);
-        if (tokenOpt.isPresent()) {
-            Token dbToken = tokenOpt.get();
-            dbToken.setRevoked(true);
-            tokenRepository.save(dbToken);
-            return ResponseEntity.ok("Logout successful");
-        }
-        return ResponseEntity.status(401).body("Invalid token");
     }
 }
